@@ -86,7 +86,7 @@
       <div class="login">
         <span class="mark">1</span>
         <h1>OnePost</h1>
-        <p class="sub">Enter your passcode to start listing.</p>
+        <p class="sub">Sign in to start listing.</p>
         <form id="lf">
           <input type="email" id="em" placeholder="Email" autocomplete="username" inputmode="email" autocapitalize="off" />
           <input type="password" id="pc" placeholder="Passcode" autocomplete="current-password" inputmode="numeric" />
