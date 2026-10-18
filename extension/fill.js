@@ -80,7 +80,10 @@ async function fillVinted(job, photoDataUrls, submit) {
   const catContent = await open('catalog-select-dropdown-input');
   const search = await waitFor(() => document.getElementById('catalog-search-input'));
   if (!catContent || !search) return fail('Could not open the Vinted category picker.');
-  let best = null;
+  // Words from the listing break ties between sibling categories (e.g. plaque vs print vs sticker).
+  const stem = (w) => w.replace(/(ies|es|s)$/, '');
+  const itemWords = new Set(norm(`${job.title} ${(job.category_keywords || []).join(' ')}`).split(' ').filter((w) => w.length > 3).map(stem));
+  const scored = new Map();
   const tryWords = [...(job.category_keywords || []), leafTarget].filter((w, i, a) => w && a.indexOf(w) === i);
   for (const word of tryWords) {
     setVal(search, word);
@@ -93,16 +96,32 @@ async function fillVinted(job, photoDataUrls, submit) {
       for (const p of targetParts) score += parts.includes(p) ? 2 : parts.some((q) => q.includes(p) || p.includes(q)) ? 1 : 0;
       if (norm(leaf) === leafTarget) score += 3;
       if (norm(leaf) === norm(word)) score += 1;
-      if (!best || score > best.score) best = { el: r, score, label: `${pathText} > ${leaf}` };
+      const tie = norm(leaf).split(' ').filter((w) => itemWords.has(stem(w))).length * 0.5;
+      const label = `${pathText} > ${leaf}`;
+      const prev = scored.get(label);
+      if (!prev || score + tie > prev.total) scored.set(label, { id: r.id, score, total: score + tie, label });
     }
-    if (best && best.score >= 7) break;
+    const top = [...scored.values()].sort((a, b) => b.total - a.total)[0];
+    if (top && top.score >= 7) break;
   }
+  const ranked = [...scored.values()].sort((a, b) => b.total - a.total);
+  const best = ranked[0];
   if (!best || best.score < 3) {
     await closeDropdown();
     return fail(`Couldn't match the category "${job.category}". Pick it on Vinted, or edit the category and retry.`);
   }
-  best.el.click();
-  notes.push(`Category: ${best.label}`);
+  // A dead heat between different categories means we'd be guessing.
+  if (ranked[1] && ranked[1].total === best.total && submit) {
+    await closeDropdown();
+    return fail(`Category is a toss-up between "${best.label}" and "${ranked[1].label}". Pick it on Vinted, or set the category in OnePost and retry.`);
+  }
+  // Re-run the search that found the winner so its element is on screen, then click it.
+  const leafWord = best.label.split('>').pop().trim();
+  let el = document.getElementById(best.id);
+  if (!el) { setVal(search, leafWord); await wait(1600); el = document.getElementById(best.id); }
+  if (!el) { await closeDropdown(); return fail(`Couldn't select the category "${best.label}".`); }
+  el.click();
+  notes.push(`Category: ${best.label}${ranked[1] && ranked[1].total === best.total ? ' (close call, please check)' : ''}`);
   await wait(1800); // category-specific fields render now
 
   // 4. Brand (type into Vinted's brand search; exact match first).
