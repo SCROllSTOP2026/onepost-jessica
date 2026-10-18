@@ -217,6 +217,7 @@ api.post('/batch/:id/approve', (req, res) => {
 });
 
 api.get('/listings', (req, res) => {
+  expireStaleLeases();
   const items = store.data.items
     .filter((i) => ['approved', 'live', 'sold'].includes(i.status))
     .sort((a, b) => (b.approvedAt || '').localeCompare(a.approvedAt || ''));
@@ -274,16 +275,25 @@ function vintedJob(i) {
 const worker = express.Router();
 worker.use(workerAuth);
 
-worker.get('/next', (req, res) => {
+// A job the worker started but never reported on might already be live on Vinted.
+// Never re-post it automatically (duplicate risk); ask a human to check instead.
+function expireStaleLeases() {
   const now = Date.now();
+  for (const i of store.data.items) {
+    const v = i.channels?.vinted;
+    if (i.status === 'approved' && v?.state === 'posting' && now - Date.parse(v.leasedAt || 0) > LEASE_MS) {
+      store.updateItem(i.id, {
+        channels: { ...i.channels, vinted: { ...v, state: 'attention', error: "Didn't hear back from the Mac. Check Vinted: if it's there, tap Mark live; if not, tap Retry.", at: new Date().toISOString() } },
+      });
+    }
+  }
+}
+
+worker.get('/next', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  expireStaleLeases();
   const candidates = store.data.items
-    .filter((i) => i.status === 'approved' && i.channels?.vinted)
-    .filter((i) => {
-      const v = i.channels.vinted;
-      if (v.state === 'pending') return true;
-      // Reclaim a job the worker started but never reported on (Mac asleep, tab closed).
-      return v.state === 'posting' && now - Date.parse(v.leasedAt || 0) > LEASE_MS;
-    })
+    .filter((i) => i.status === 'approved' && i.channels?.vinted?.state === 'pending')
     .sort((a, b) => (a.approvedAt || '').localeCompare(b.approvedAt || '') || a.createdAt.localeCompare(b.createdAt));
   const item = candidates[0];
   if (!item) return res.json({ job: null });

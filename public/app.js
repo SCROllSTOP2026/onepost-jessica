@@ -422,6 +422,7 @@
       if (i.status !== 'sold') {
         if (s === 'pending' && ch !== 'vinted') actions = `<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
         if (s === 'attention') actions = `<button class="btn small ghost" data-mark="${ch}:pending">Retry</button>${assist}<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
+        if (s === 'posting') actions = `<button class="btn small ghost" data-mark="${ch}:live">It's live</button>`;
         if (s === 'live') actions = `${c.url ? `<a class="btn small ghost" href="${esc(c.url)}" target="_blank" rel="noopener">View</a>` : ''}<button class="btn small ghost" data-sold="${ch}">Sold here</button>`;
       } else if (s === 'live' && i.soldOn !== ch) {
         actions = `<button class="btn small" data-mark="${ch}:removed">Mark removed</button>`;
