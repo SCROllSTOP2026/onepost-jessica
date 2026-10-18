@@ -8,7 +8,7 @@ Snap an item on iPhone, add a quick note and price, AI writes the listing, appro
 → **Review**: every draft in the batch as a card: eBay title (80-char counter), Vinted title, description, price, condition, brand, size, colour, material, category. "Please check" flags anything the AI couldn't confirm from the photos. Toggle eBay / Vinted per item. Redraft or delete. One button approves the batch.
 → **Listed**: approved items with per-platform status. For Vinted: **Copy text** and **Photos** (iPhone share sheet, "Save Images") for fast assisted posting. **Mark live**, **Sold here**, and a warning to remove the other listing after a sale.
 
-Phase 2 replaces the manual "Mark live" step with eBay API posting and the Vinted Chrome extension worker; the hook point is `POST /api/batch/:id/approve` in `server.js`.
+**Phase 2 (Vinted posting):** approved items queue for the Chrome extension in `extension/`, which fills and uploads them on Vinted from the MacBook. See `extension/README.md`. Status shows on the Listed screen: Queued, Posting, Live (with a View link) or Needs a hand.
 
 ## Deploy to Railway (about 15 minutes)
 
@@ -20,6 +20,7 @@ Phase 2 replaces the manual "Mark live" step with eBay API posting and the Vinte
    ↳ `SESSION_SECRET`: any long random string
    ↳ `GEMINI_API_KEY`: from Google AI Studio (use a paid-tier key)
    ↳ `DATA_DIR` = `/data`
+   ↳ `WORKER_TOKEN`: shared secret for the Vinted Chrome extension
    ↳ optional `LISTING_FOOTER`, `GEMINI_MODEL`
 5. Service → **Settings → Networking** → Generate Domain.
 6. On her iPhone: open the URL in Safari → Share → **Add to Home Screen**.

@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
 const Store = require('./lib/store');
-const { draftListing, MODEL } = require('./lib/gemini');
+const { draftListing, MODEL, VINTED_COLOURS, VINTED_MATERIALS } = require('./lib/gemini');
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -135,7 +135,7 @@ api.post('/items', upload.array('photos', 12), (req, res) => {
     photos: files.map((f) => f.filename),
     note: String(req.body.note || '').slice(0, 1000),
     price,
-    platforms: { ebay: true, vinted: true },
+    platforms: { ebay: false, vinted: true },
     status: 'queued',
     draft: null,
     createdAt: new Date().toISOString(),
@@ -144,7 +144,17 @@ api.post('/items', upload.array('photos', 12), (req, res) => {
   res.status(201).json(item);
 });
 
-const EDITABLE = ['ebay_title', 'vinted_title', 'description', 'brand', 'item_type', 'department', 'category', 'size', 'colour', 'material', 'condition', 'price'];
+const EDITABLE = ['ebay_title', 'vinted_title', 'description', 'brand', 'item_type', 'department', 'category', 'size', 'colour', 'material', 'condition', 'price', 'package_size'];
+// Free-text colour/material edits are mapped back onto Vinted's fixed option lists.
+function toVintedList(text, allowed, max) {
+  const lower = allowed.map((a) => a.toLowerCase());
+  return String(text || '')
+    .split(/[,/&+]|\band\b/i)
+    .map((s) => allowed[lower.indexOf(s.trim().toLowerCase())])
+    .filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, max);
+}
 api.patch('/items/:id', (req, res) => {
   const item = store.getItem(req.params.id);
   if (!item) return res.status(404).json({ error: 'Not found' });
@@ -152,6 +162,13 @@ api.patch('/items/:id', (req, res) => {
   if (req.body.draft && item.draft) {
     const draft = { ...item.draft };
     for (const k of EDITABLE) if (k in req.body.draft) draft[k] = k === 'price' ? Number(req.body.draft[k]) || 0 : String(req.body.draft[k]);
+    if ('colour' in req.body.draft) draft.colours = toVintedList(draft.colour, VINTED_COLOURS, 2);
+    if ('material' in req.body.draft) draft.materials = toVintedList(draft.material, VINTED_MATERIALS, 3);
+    if ('category' in req.body.draft) {
+      const leaf = draft.category.split('>').pop().trim();
+      if (leaf) draft.category_keywords = [leaf, ...(draft.category_keywords || []).filter((k) => k !== leaf)].slice(0, 3);
+    }
+    if (!['small', 'medium', 'large'].includes(draft.package_size)) draft.package_size = 'medium';
     if (draft.ebay_title.length > 80) return res.status(400).json({ error: 'eBay title must be 80 characters or fewer' });
     patch.draft = draft;
   }
@@ -212,9 +229,87 @@ api.post('/items/:id/channel', (req, res) => {
   if (!item || !item.channels) return res.status(404).json({ error: 'Not found' });
   const { channel, state } = req.body || {};
   if (!['ebay', 'vinted'].includes(channel) || !['pending', 'live', 'removed'].includes(state)) return res.status(400).json({ error: 'Bad request' });
-  const channels = { ...item.channels, [channel]: { ...(item.channels[channel] || {}), state, at: new Date().toISOString() } };
+  const prev = item.channels[channel] || {};
+  // Re-queuing resets attempts so the worker tries again.
+  const next = state === 'pending' ? { state, attempts: 0, at: new Date().toISOString() } : { ...prev, state, error: null, at: new Date().toISOString() };
+  const channels = { ...item.channels, [channel]: next };
   res.json(store.updateItem(item.id, { channels }));
 });
+
+// ---------- Vinted worker (Chrome extension on the Mac) ----------
+const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
+const LEASE_MS = 40 * 60 * 1000; // review mode can sit open for a while
+const MAX_ATTEMPTS = 2;
+let workerSeen = null;
+
+function workerAuth(req, res, next) {
+  const t = String(req.headers['x-worker-token'] || '');
+  if (!WORKER_TOKEN || t.length !== WORKER_TOKEN.length || !crypto.timingSafeEqual(Buffer.from(t), Buffer.from(WORKER_TOKEN))) {
+    return res.status(401).json({ error: 'Bad worker token' });
+  }
+  workerSeen = { at: new Date().toISOString(), version: String(req.headers['x-worker-version'] || '') };
+  next();
+}
+
+function vintedJob(i) {
+  const d = i.draft || {};
+  return {
+    id: i.id,
+    title: d.vinted_title || d.ebay_title,
+    description: d.description,
+    price: d.price,
+    condition: d.condition,
+    brand: d.brand,
+    size: d.size,
+    department: d.department,
+    category: d.category,
+    category_keywords: d.category_keywords || [],
+    colours: d.colours || [],
+    materials: d.materials || [],
+    package_size: d.package_size || 'medium',
+    photos: i.photos.map((f) => `/worker/photo/${f}`),
+  };
+}
+
+const worker = express.Router();
+worker.use(workerAuth);
+
+worker.get('/next', (req, res) => {
+  const now = Date.now();
+  const candidates = store.data.items
+    .filter((i) => i.status === 'approved' && i.channels?.vinted)
+    .filter((i) => {
+      const v = i.channels.vinted;
+      if (v.state === 'pending') return true;
+      // Reclaim a job the worker started but never reported on (Mac asleep, tab closed).
+      return v.state === 'posting' && now - Date.parse(v.leasedAt || 0) > LEASE_MS;
+    })
+    .sort((a, b) => (a.approvedAt || '').localeCompare(b.approvedAt || '') || a.createdAt.localeCompare(b.createdAt));
+  const item = candidates[0];
+  if (!item) return res.json({ job: null });
+  const v = item.channels.vinted;
+  store.updateItem(item.id, { channels: { ...item.channels, vinted: { ...v, state: 'posting', leasedAt: new Date().toISOString(), attempts: (v.attempts || 0) + 1 } } });
+  res.json({ job: vintedJob(item), queued: candidates.length - 1 });
+});
+
+worker.post('/result', (req, res) => {
+  const { id, ok, url, error, manual } = req.body || {};
+  const item = store.getItem(id);
+  if (!item || !item.channels?.vinted) return res.status(404).json({ error: 'Not found' });
+  const v = item.channels.vinted;
+  const at = new Date().toISOString();
+  let next;
+  if (ok) next = { ...v, state: 'live', url: String(url || ''), error: null, at };
+  else if (manual || (v.attempts || 0) >= MAX_ATTEMPTS) next = { ...v, state: 'attention', error: String(error || 'Unknown problem').slice(0, 300), at };
+  else next = { ...v, state: 'pending', error: String(error || '').slice(0, 300), at };
+  res.json(store.updateItem(item.id, { channels: { ...item.channels, vinted: next } }).channels.vinted);
+});
+
+worker.get('/ping', (req, res) => res.json({ ok: true }));
+worker.use('/photo', express.static(PHOTO_DIR, { maxAge: '1d' }));
+
+app.use('/worker', worker);
+api.get('/worker-status', (req, res) => res.json({ configured: !!WORKER_TOKEN, seen: workerSeen }));
 
 api.post('/items/:id/sold', (req, res) => {
   const item = store.getItem(req.params.id);

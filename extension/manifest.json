@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "OnePost Vinted Poster",
+  "version": "0.1.0",
+  "description": "Posts approved OnePost listings to Vinted from this Chrome profile.",
+  "permissions": ["alarms", "storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://www.vinted.co.uk/*",
+    "https://*.up.railway.app/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "OnePost Vinted Poster", "default_popup": "options.html" },
+  "options_page": "options.html",
+  "icons": { "128": "icon-128.png" }
+}

@@ -290,6 +290,7 @@
               <div class="field"><label class="label">Material</label><input type="text" data-f="material" value="${esc(d.material)}" /></div>
             </div>
             <div class="field"><label class="label">Category</label><input type="text" data-f="category" value="${esc(d.category)}" /></div>
+            <div class="field"><label class="label">Parcel size</label><select data-f="package_size">${[['small', 'Small (large envelope)'], ['medium', 'Medium (shoebox)'], ['large', 'Large (moving box)']].map(([v, l]) => `<option value="${v}" ${v === (d.package_size || 'medium') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
             <div class="btnrow"><button class="btn small ghost" data-redraft>Redraft with AI</button><button class="btn small danger" data-del>Delete item</button></div>
           ` : ''}
           ${status === 'drafting' ? '<p class="note"><span class="spinner"></span> AI is writing this listing…</p>' : ''}
@@ -372,19 +373,34 @@
   async function renderListed() {
     setTab('listed');
     view.innerHTML = '<h1>Listed</h1><p class="sub"><span class="spinner"></span></p>';
-    const { items } = await api('/listings');
+    const [{ items }, ws] = await Promise.all([api('/listings'), api('/worker-status').catch(() => ({}))]);
     if (!items.length) {
       view.innerHTML = `<h1>Listed</h1><div class="empty-state"><div class="big">🏷️</div>Approved listings will appear here.</div>`;
       return;
     }
     const active = items.filter((i) => i.status !== 'sold');
     const sold = items.filter((i) => i.status === 'sold');
+    const waiting = active.filter((i) => ['pending', 'posting'].includes(chState(i, 'vinted'))).length;
     view.innerHTML = `
       <h1>Listed</h1>
       <p class="sub">${active.length} active · ${sold.length} sold</p>
+      ${workerBanner(ws, waiting)}
       ${active.map(listedCard).join('')}
       ${sold.length ? `<h2 class="label" style="margin:22px 0 10px">Sold</h2>${sold.map(listedCard).join('')}` : ''}`;
     bindListed(items);
+    clearTimeout(state.pollTimer);
+    if (waiting) state.pollTimer = setTimeout(() => { if (location.hash.startsWith('#/listed')) renderListed().catch(() => {}); }, 15000);
+  }
+
+  function workerBanner(ws, waiting) {
+    if (!ws || !ws.configured) return '';
+    const age = ws.seen ? (Date.now() - Date.parse(ws.seen.at)) / 60000 : Infinity;
+    const online = age < 3;
+    if (online && !waiting) return '';
+    return `<div class="${online ? 'card' : 'checks'}" style="${online ? 'padding:12px 14px;font-size:14px' : ''}">
+      ${online ? `<span class="spinner"></span> Posting to Vinted: ${waiting} to go, a couple of minutes apart`
+        : `<b>Vinted poster is offline</b>${waiting ? `${waiting} item${waiting > 1 ? 's are' : ' is'} waiting. ` : ''}Open the MacBook with Chrome running and they'll post automatically.`}
+    </div>`;
   }
 
   function chState(i, ch) {
@@ -396,18 +412,22 @@
   function listedCard(i) {
     const d = i.draft || {};
     const chRow = (ch, name) => {
+      const c = i.channels?.[ch];
       const s = chState(i, ch);
       if (!s) return '';
-      const label = s === 'pending' ? 'To post' : s === 'live' ? 'Live' : 'Removed';
-      const cls = s === 'pending' ? 'pending' : s;
+      const labels = { pending: ch === 'vinted' ? 'Queued' : 'To post', posting: 'Posting…', live: 'Live', removed: 'Removed', attention: 'Needs a hand' };
+      const cls = { pending: 'pending', posting: 'drafting', live: 'live', removed: 'removed', attention: 'failed' }[s] || s;
+      const assist = ch === 'vinted' ? '<button class="btn small ghost" data-copy>Copy text</button><button class="btn small ghost" data-save>Photos</button>' : '';
       let actions = '';
       if (i.status !== 'sold') {
-        if (s === 'pending') actions = `${ch === 'vinted' ? '<button class="btn small ghost" data-copy>Copy text</button><button class="btn small ghost" data-save>Photos</button>' : ''}<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
-        if (s === 'live') actions = `<button class="btn small ghost" data-sold="${ch}">Sold here</button>`;
+        if (s === 'pending' && ch !== 'vinted') actions = `<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
+        if (s === 'attention') actions = `<button class="btn small ghost" data-mark="${ch}:pending">Retry</button>${assist}<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
+        if (s === 'live') actions = `${c.url ? `<a class="btn small ghost" href="${esc(c.url)}" target="_blank" rel="noopener">View</a>` : ''}<button class="btn small ghost" data-sold="${ch}">Sold here</button>`;
       } else if (s === 'live' && i.soldOn !== ch) {
         actions = `<button class="btn small" data-mark="${ch}:removed">Mark removed</button>`;
       }
-      return `<div class="ch"><div><span class="n">${name}</span> <span class="pill ${cls}">${label}</span></div><div class="btnrow">${actions}</div></div>`;
+      const err = s === 'attention' && c.error ? `<div class="note" style="margin:6px 0 0">${esc(c.error)}</div>` : '';
+      return `<div class="ch" style="flex-wrap:wrap"><div><span class="n">${name}</span> <span class="pill ${cls}">${labels[s] || s}</span>${err}</div><div class="btnrow">${actions}</div></div>`;
     };
     const needsRemoval = i.status === 'sold' && ['ebay', 'vinted'].some((c) => c !== i.soldOn && chState(i, c) === 'live');
     return `
