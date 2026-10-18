@@ -315,7 +315,12 @@ worker.post('/result', (req, res) => {
   res.json(store.updateItem(item.id, { channels: { ...item.channels, vinted: next } }).channels.vinted);
 });
 
-worker.get('/ping', (req, res) => res.json({ ok: true }));
+// Heartbeat: the extension reports what it's doing every minute, even mid-job.
+worker.get('/ping', (req, res) => {
+  const state = ['idle', 'busy', 'waiting', 'paused'].includes(req.query.state) ? req.query.state : 'idle';
+  workerSeen = { ...workerSeen, state, title: String(req.query.title || '').slice(0, 120) };
+  res.set('Cache-Control', 'no-store').json({ ok: true });
+});
 worker.use('/photo', express.static(PHOTO_DIR, { maxAge: '1d' }));
 
 app.use('/worker', worker);

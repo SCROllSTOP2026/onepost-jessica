@@ -90,10 +90,15 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 // ---------- the poll loop ----------
+async function heartbeat(state, title = '') {
+  try { await call(`/worker/ping?state=${state}&title=${encodeURIComponent(title)}`); } catch {}
+}
+
 async function tick(force = false) {
   const s = await settings();
   if (!s.token) return badge('set');
   const cur = await getCurrent();
+  await heartbeat(cur ? (cur.mode === 'review' && !cur.submittedAt ? 'waiting' : 'busy') : s.paused ? 'paused' : 'idle', cur?.title);
 
   if (cur) {
     const age = Date.now() - cur.startedAt;

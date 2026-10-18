@@ -396,6 +396,12 @@
     if (!ws || !ws.configured) return '';
     const age = ws.seen ? (Date.now() - Date.parse(ws.seen.at)) / 60000 : Infinity;
     const online = age < 3;
+    if (online && ws.seen.state === 'waiting') {
+      return `<div class="checks"><b>Waiting for you on the Mac</b>${esc(ws.seen.title || 'An item')} is filled in on Vinted. Check it and press Upload.</div>`;
+    }
+    if (online && ws.seen.state === 'paused' && waiting) {
+      return `<div class="checks"><b>Vinted posting is paused</b>Untick "Pause posting" in the extension on the Mac to carry on.</div>`;
+    }
     if (online && !waiting) return '';
     return `<div class="${online ? 'card' : 'checks'}" style="${online ? 'padding:12px 14px;font-size:14px' : ''}">
       ${online ? `<span class="spinner"></span> Posting to Vinted: ${waiting} to go, a couple of minutes apart`
