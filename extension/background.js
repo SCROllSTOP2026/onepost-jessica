@@ -74,14 +74,18 @@ async function finish(cur, body, closeTab) {
 }
 
 // ---------- success / abandonment detection (top-level listeners) ----------
+// After a successful upload Vinted leaves the sell page. Treat leaving it (to anywhere on
+// Vinted except sign-in pages) as uploaded; capture the item link when the new page has one.
+const NOT_DONE_RE = /\/(member\/(login|signup|register)|session-refresh|items\/new)/;
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (!info.url) return;
   const cur = await getCurrent();
-  if (!cur || cur.tabId !== tabId || !info.url && !tab.url) return;
-  const url = info.url || tab.url;
+  if (!cur || cur.tabId !== tabId || !cur.filledAt) return;
+  const url = info.url;
+  if (!url.startsWith('https://www.vinted.co.uk/') || NOT_DONE_RE.test(url)) return;
   const m = url.match(LIVE_RE);
-  if (m && m[1] && !/\/items\/new/.test(url)) {
-    await finish(cur, { ok: true, url: `https://www.vinted.co.uk/items/${m[1]}` }, cur.mode === 'auto');
-  }
+  await log(`Left the sell page for ${url}`);
+  await finish(cur, { ok: true, url: m ? `https://www.vinted.co.uk/items/${m[1]}` : '' }, cur.mode === 'auto');
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
@@ -145,6 +149,9 @@ async function runJob(job, mode) {
     return finish(cur, { ok: false, manual: true, error: 'Vinted is not logged in on the Mac. Log in to Vinted in this Chrome profile.' }, false);
   }
   await new Promise((r) => setTimeout(r, 2500)); // let Vinted's form finish rendering
+  // From here on, leaving the sell page means the item was uploaded (auto mode can navigate
+  // before executeScript even returns, so mark this first).
+  await setCurrent({ ...cur, filledAt: Date.now() });
 
   let result;
   try {
@@ -161,7 +168,8 @@ async function runJob(job, mode) {
   if (!result?.ok) return finish(cur, { ok: false, manual: result?.manual !== false, error: result?.error || 'Unknown problem' }, false);
 
   if (result.submitted) {
-    await setCurrent({ ...cur, submittedAt: Date.now() });
+    const now = await getCurrent();
+    if (now && now.id === cur.id) await setCurrent({ ...now, submittedAt: Date.now() });
   } else {
     badge('✋', '#9A5B12');
     await log(`Filled and waiting for you to check and press Upload: ${job.title}`);

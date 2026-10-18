@@ -337,8 +337,9 @@ app.use('/api', api);
 
 // Photos only for signed-in users.
 app.use('/photos', requireAuth, express.static(PHOTO_DIR, { maxAge: '30d', immutable: true }));
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// Always revalidate the app shell so phones pick up new versions straight away.
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], setHeaders: (res, file) => { if (/\.(html|js|css|webmanifest)$/.test(file)) res.set('Cache-Control', 'no-cache'); } }));
+app.get('*', (req, res) => res.set('Cache-Control', 'no-cache').sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'A photo is too large' : 'Upload problem: ' + err.code });

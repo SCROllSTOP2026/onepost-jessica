@@ -229,9 +229,10 @@ async function fillVinted(job, photoDataUrls, submit) {
   const priceText = String(Number(job.price || 0)).replace(/\.0+$/, '');
   await typeInto(price, priceText);
   await human(400);
-  // Vinted shows its own validation message if the price didn't register; fail loudly rather than upload £0.
-  const priceError = $$('*').some((e) => !e.children.length && /price must be/i.test(e.textContent || ''));
-  if (priceError) return fail(`Vinted didn't accept the price £${priceText}. Type it into the price box on Vinted.`);
+  // If Vinted's form didn't take the price it shows "£NaN" or nothing; fail loudly rather than upload £0.
+  if (!/\d/.test(price.value) || /nan/i.test(price.value)) {
+    return fail(`Vinted didn't accept the price £${priceText}. Type it into the price box on Vinted.`);
+  }
   const pkg = document.getElementById(`package_type_selector_${{ small: 1, medium: 2, large: 3 }[job.package_size] || 2}`);
   if (pkg) pkg.click();
   await human(800);

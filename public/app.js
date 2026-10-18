@@ -420,7 +420,7 @@
     const chRow = (ch, name) => {
       const c = i.channels?.[ch];
       const s = chState(i, ch);
-      if (!s) return '';
+      if (!s || (ch === 'ebay' && s === 'removed' && i.status !== 'sold')) return '';
       const labels = { pending: ch === 'vinted' ? 'Queued' : 'To post', posting: 'Posting…', live: 'Live', removed: 'Removed', attention: 'Needs a hand' };
       const cls = { pending: 'pending', posting: 'drafting', live: 'live', removed: 'removed', attention: 'failed' }[s] || s;
       const assist = ch === 'vinted' ? '<button class="btn small ghost" data-copy>Copy text</button><button class="btn small ghost" data-save>Photos</button>' : '';
@@ -429,7 +429,8 @@
         if (s === 'pending' && ch !== 'vinted') actions = `<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
         if (s === 'attention') actions = `<button class="btn small ghost" data-mark="${ch}:pending">Retry</button>${assist}<button class="btn small" data-mark="${ch}:live">Mark live</button>`;
         if (s === 'posting') actions = `<button class="btn small ghost" data-mark="${ch}:live">It's live</button>`;
-        if (s === 'live') actions = `${c.url ? `<a class="btn small ghost" href="${esc(c.url)}" target="_blank" rel="noopener">View</a>` : ''}<button class="btn small ghost" data-sold="${ch}">Sold here</button>`;
+        if (s === 'live' && ch === 'ebay' && !c.url) actions = `<button class="btn small ghost" data-mark="ebay:removed">Not on eBay</button>`;
+        else if (s === 'live') actions = `${c.url ? `<a class="btn small ghost" href="${esc(c.url)}" target="_blank" rel="noopener">View</a>` : ''}<button class="btn small ghost" data-sold="${ch}">Sold here</button>`;
       } else if (s === 'live' && i.soldOn !== ch) {
         actions = `<button class="btn small" data-mark="${ch}:removed">Mark removed</button>`;
       }

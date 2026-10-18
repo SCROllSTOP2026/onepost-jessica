@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OnePost Vinted Poster",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Posts approved OnePost listings to Vinted from this Chrome profile.",
   "permissions": ["alarms", "storage", "tabs", "scripting"],
   "host_permissions": [
