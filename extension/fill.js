@@ -23,6 +23,20 @@ async function fillVinted(job, photoDataUrls, submit) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   };
+  // Real typing via the browser's own text insertion, so Vinted's form state registers it
+  // (setting .value directly can show on screen but leave the field "empty" internally).
+  const typeInto = async (el, text) => {
+    el.focus();
+    el.select?.();
+    document.execCommand('selectAll');
+    const ok = document.execCommand('insertText', false, String(text));
+    if (!ok || el.value.replace(/[£,\s]/g, '') === '' && String(text) !== '') setVal(el, text);
+    await wait(150);
+    el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    el.blur();
+    await wait(250);
+  };
   const closeDropdown = async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     document.body.click();
@@ -67,9 +81,9 @@ async function fillVinted(job, photoDataUrls, submit) {
   await human(1500);
 
   // 2. Title and description.
-  setVal(title, job.title);
+  await typeInto(title, job.title);
   await human(400);
-  setVal($('[data-testid="description--input"]'), job.description);
+  await typeInto($('[data-testid="description--input"]'), job.description);
   await human(600);
 
   // 3. Category: use Vinted's own category search, then pick the result whose path best matches ours.
@@ -212,8 +226,12 @@ async function fillVinted(job, photoDataUrls, submit) {
   // 8. Price and parcel size.
   const price = $('[data-testid="price-input--input"]');
   if (!price) return fail('Could not find the price field.');
-  setVal(price, Number(job.price || 0).toFixed(2));
+  const priceText = String(Number(job.price || 0)).replace(/\.0+$/, '');
+  await typeInto(price, priceText);
   await human(400);
+  // Vinted shows its own validation message if the price didn't register; fail loudly rather than upload £0.
+  const priceError = $$('*').some((e) => !e.children.length && /price must be/i.test(e.textContent || ''));
+  if (priceError) return fail(`Vinted didn't accept the price £${priceText}. Type it into the price box on Vinted.`);
   const pkg = document.getElementById(`package_type_selector_${{ small: 1, medium: 2, large: 3 }[job.package_size] || 2}`);
   if (pkg) pkg.click();
   await human(800);
