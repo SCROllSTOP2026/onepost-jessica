@@ -84,7 +84,7 @@ h1 { font-size: 28px; letter-spacing: -0.02em; margin: 6px 0 2px; }
 .label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
 .field { margin-bottom: 14px; }
 .field:last-child { margin-bottom: 0; }
-input[type=text], input[type=password], input[type=number], input[inputmode], textarea, select {
+input[type=text], input[type=password], input[type=email], input[type=number], input[inputmode], textarea, select {
   width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line);
   background: var(--bg); outline: none; font-size: 16px; /* 16px stops iOS zoom */
 }

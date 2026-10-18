@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const PHOTO_DIR = path.join(DATA_DIR, 'photos');
 const PASSCODE = process.env.APP_PASSCODE || '';
+const LOGIN_EMAIL = (process.env.APP_EMAIL || '').trim().toLowerCase();
 const SECRET = process.env.SESSION_SECRET || PASSCODE || 'dev';
 const FOOTER = (process.env.LISTING_FOOTER || '').replace(/\\n/g, '\n');
 
@@ -22,7 +23,7 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
 // ---------- auth: one shared passcode, long-lived cookie ----------
-const token = crypto.createHmac('sha256', SECRET).update('onepost:' + PASSCODE).digest('hex');
+const token = crypto.createHmac('sha256', SECRET).update('onepost:' + LOGIN_EMAIL + ':' + PASSCODE).digest('hex');
 const attempts = new Map();
 
 function cookies(req) {
@@ -49,12 +50,14 @@ app.post('/api/login', (req, res) => {
   rec.n++;
   attempts.set(ip, rec);
 
-  if (PASSCODE && String(req.body?.passcode || '') !== PASSCODE) return res.status(401).json({ error: 'Wrong passcode' });
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (LOGIN_EMAIL && email !== LOGIN_EMAIL) return res.status(401).json({ error: 'Wrong email or passcode' });
+  if (PASSCODE && String(req.body?.passcode || '') !== PASSCODE) return res.status(401).json({ error: 'Wrong email or passcode' });
   attempts.delete(ip);
   res.cookie('op_session', token, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 180 * 24 * 3600 * 1000 });
   res.json({ ok: true });
 });
-app.get('/api/me', (req, res) => res.json({ signedIn: authed(req), model: MODEL, demo: !process.env.GEMINI_API_KEY }));
+app.get('/api/me', (req, res) => res.json({ signedIn: authed(req), needsEmail: !!LOGIN_EMAIL, model: MODEL, demo: !process.env.GEMINI_API_KEY }));
 
 // ---------- drafting queue ----------
 const queue = [];

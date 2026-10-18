@@ -16,7 +16,7 @@ Phase 2 replaces the manual "Mark live" step with eBay API posting and the Vinte
 2. Railway → New Project → Deploy from GitHub repo → pick it. Node is detected automatically.
 3. Service → **Volumes** → add a volume mounted at `/data` (stores photos and listings; without it data is wiped on every deploy).
 4. Service → **Variables**:
-   ↳ `APP_PASSCODE`: what she types to sign in
+   ↳ `APP_EMAIL` and `APP_PASSCODE`: her sign-in details
    ↳ `SESSION_SECRET`: any long random string
    ↳ `GEMINI_API_KEY`: from Google AI Studio (use a paid-tier key)
    ↳ `DATA_DIR` = `/data`

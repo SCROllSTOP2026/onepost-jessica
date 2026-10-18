@@ -88,7 +88,8 @@
         <h1>OnePost</h1>
         <p class="sub">Enter your passcode to start listing.</p>
         <form id="lf">
-          <input type="password" id="pc" placeholder="Passcode" autocomplete="current-password" />
+          <input type="email" id="em" placeholder="Email" autocomplete="username" inputmode="email" autocapitalize="off" />
+          <input type="password" id="pc" placeholder="Passcode" autocomplete="current-password" inputmode="numeric" />
           <button class="btn" type="submit">Sign in</button>
           <div class="err" id="le"></div>
         </form>
@@ -96,7 +97,7 @@
     $('#lf').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        await api('/login', { method: 'POST', body: { passcode: $('#pc').value } });
+        await api('/login', { method: 'POST', body: { email: $('#em').value, passcode: $('#pc').value } });
         location.hash = '#/add';
         route();
       } catch (err) { $('#le').textContent = err.message; }
